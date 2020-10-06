@@ -1,43 +1,120 @@
+import io.restassured.http.ContentType;
 import io.restassured.http.Cookies;
 import io.restassured.response.Response;
-import io.restassured.response.ResponseOptions;
-import org.hamcrest.Matcher;
-import org.hamcrest.text.MatchesPattern;
+import io.restassured.specification.RequestSpecification;
+import org.testng.Assert;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
+import utils.JSONIssue;
 
-import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.lessThan;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
+
 
 public class JIRAApiTest {
 
-    @Test
-    public void getExistingIssue() {
+    private RequestSpecification given;
+    private static final String BASE_ISSUE_URL = "https://jira.hillel.it/rest/api/2/issue";
 
-        Response response =
-
-                given().
-                        auth().preemptive().basic("webinar5", "webinar5").
-                        when().
-                        get("http://jira.hillel.it/rest/api/2/issue/WEBINAR-9060").
-                        then().
-                        extract().response();
-
-        Cookies coockies = response.getDetailedCookies();
-
-        assertEquals(response.statusCode(), 200);
-        assertEquals("WEBINAR-9060", response.path("key"));
-        final Matcher<String> matcher = new MatchesPattern(Pattern.compile("[A-Z]+\\-[0-9]+"));
-        assertTrue(matcher.matches("WEBINAR-9060"));
+    @BeforeClass
+    public void init() {
+        given = given()
+                .auth()
+                .preemptive()
+                .basic("webinar5", "webinar5");
     }
 
+    @Test
+    public void getExistingIssue() {
+        Response getIssueResponse = given
+                .when()
+                .get(BASE_ISSUE_URL + "/WEBINAR-9060")
+                .then()
+                .extract()
+                .response();
+
+        Cookies coockies = getIssueResponse.getDetailedCookies();
+
+        assertEquals(getIssueResponse.statusCode(), 200);
+        assertEquals(getIssueResponse.path("key"), "WEBINAR-9060");
+    }
 
     @Test
     public void createIssue() {
-        Response response = JiraAPISteps.createIssue();
-        assertEquals(201, response.statusCode());
-        response.then().extract().path("key");
+        Response createCommentResponse = given
+                .contentType(ContentType.JSON)
+                .body(JSONIssue.produceIssue().toJSONString()) // вызвали метод из статического класса, который возвращает обьект
+                .when()
+                .post(BASE_ISSUE_URL)
+                .then()
+                .contentType(ContentType.JSON)
+                .time(lessThan(2L), TimeUnit.SECONDS) // проверка что запрос не больше 2 секунд
+                .statusCode(201)
+                .extract()
+                .response();
+        System.out.println("reponse time is: " + createCommentResponse.time()); //узнать сколько времени шел запрос
+        createCommentResponse.prettyPrint();
+
+        String webinar = createCommentResponse.path("key");
+
+        Response createdIssue = given
+                .when()
+                .get(BASE_ISSUE_URL + "/" + webinar)
+                .then()
+                .statusCode(200)
+                .extract()
+                .response();
+
+        assertEquals(createdIssue.path("fields.summary"), "My postman issue");
+        assertEquals(createdIssue.path("fields.reporter.name"), "webinar5");
+
+        // Delete issue
+        given.when()
+                .delete(BASE_ISSUE_URL + "/" + webinar)
+                .then()
+                .statusCode(204);
+
+        // Check deleted issue
+        given.when()
+                .get(BASE_ISSUE_URL + "/" + webinar)
+                .then()
+                .statusCode(404);
     }
+
+    @Test
+    public void addCommentTest() {
+        // POST comment
+        Response addComment = given
+                .contentType(ContentType.JSON)
+                .body("{\"body\": \"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque eget venenatis elit. Duis eu justo eget augue iaculis fermentum. Sed semper quam laoreet nisi egestas at posuere augue semper.\"\n}")
+                .when()
+                .post(BASE_ISSUE_URL + "/WEBINAR-13726/comment")
+                .then()
+                .contentType(ContentType.JSON)
+                .statusCode(201)
+                .extract()
+                .response();
+        addComment.prettyPrint();
+        long milli = addComment.getTime();
+        System.out.println("milli = " + milli);
+        Assert.assertTrue(milli <= 1000);
+
+        String commentId = addComment.path("id");
+
+        //DELETE comment
+        given.when()
+                .delete(BASE_ISSUE_URL + "/WEBINAR-13726/comment/" + commentId)
+                .then()
+                .statusCode(204);
+
+        // Check deleted comment
+        given.when()
+                .get(BASE_ISSUE_URL + "/WEBINAR-13726/comment/" + commentId)
+                .then()
+                .statusCode(404);
+    }
+
 }
