@@ -1,7 +1,6 @@
 package utils;
 
 import io.restassured.http.ContentType;
-import io.restassured.http.Cookies;
 import io.restassured.response.Response;
 import io.restassured.response.ValidatableResponse;
 import io.restassured.specification.RequestSpecification;
@@ -10,34 +9,33 @@ import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.lessThan;
-import static org.testng.Assert.assertEquals;
 
 public class JiraAPISteps {
     private static RequestSpecification given;
 
-    public void initAuth() {
-            given = given()
-                    .auth()
-                    .preemptive()
-                    .basic("webinar5", "webinar5");
+    public static void initAuth() {
+        given = given()
+                .auth()
+                .preemptive()
+                .basic(JiraCredentials.username, JiraCredentials.password);
     }
 
-    public Response getIssue(String url) {
+    public static Response getIssue(String ticketID) {
         Response getIssueResponse = given
                 .when()
-                .get(url)
+                .get(String.format(JiraCredentials.someIssueURL, ticketID))
                 .then()
                 .extract()
                 .response();
         return getIssueResponse;
     }
 
-    public Response createNewIssue(String url) {
+    public static Response createNewIssue() {
         Response createCommentResponse = given
                 .contentType(ContentType.JSON)
-                .body(JSONIssue.produceIssue().toJSONString()) // вызвали метод из статического класса, который возвращает обьект
+                .body(JSONObjectsBuilder.produceIssue("API test summary").toJSONString()) // вызвали метод из статического класса, который возвращает обьект
                 .when()
-                .post(url)
+                .post(JiraCredentials.BASE_URL + JiraCredentials.baseIssueURL)
                 .then()
                 .contentType(ContentType.JSON)
                 .time(lessThan(2L), TimeUnit.SECONDS) // проверка что запрос не больше 2 секунд
@@ -49,21 +47,21 @@ public class JiraAPISteps {
         return createCommentResponse;
     }
 
-    public ValidatableResponse deleteIssue(String url) {
+    public static ValidatableResponse deleteIssue(String ticketID) {
         ValidatableResponse deleteCreatedIssue = given
                 .when()
-                .delete(url)
+                .delete(String.format(JiraCredentials.someIssueURL, ticketID))
                 .then()
                 .statusCode(204);
         return deleteCreatedIssue;
     }
 
-    public Response addNewComment(String url) {
+    public static Response addNewComment(String ticketID) {
         Response addComment = given
                 .contentType(ContentType.JSON)
-                .body(JSONCommentBody.commentBody().toJSONString())
+                .body(JSONObjectsBuilder.commentBody("Lorem ipsum dolor sit amet, consectetur adipiscing elit.").toJSONString())
                 .when()
-                .post(url)
+                .post(String.format(JiraCredentials.addCommentURL, ticketID))
                 .then()
                 .contentType(ContentType.JSON)
                 .statusCode(201)
@@ -73,18 +71,13 @@ public class JiraAPISteps {
         return addComment;
     }
 
-    public ValidatableResponse deleteAddedComment(String url) {
+    public static ValidatableResponse deleteAddedComment(String ticketId, String commentId) {
         ValidatableResponse deleteCreatedComment = given
                 .when()
-                .delete(url)
+                .delete(String.format(JiraCredentials.commentIdUrl, ticketId, commentId))
                 .then()
                 .statusCode(204);
         return deleteCreatedComment;
 
     }
-
-
-
-
-
 }
